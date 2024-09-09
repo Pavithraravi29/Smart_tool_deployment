@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -e
 
 # Check if Docker is installed
@@ -21,7 +22,7 @@ if [ -d "Smart_tool_deployment" ]; then
     cd Smart_tool_deployment
     git pull
 else
-    git clone https://github.com/Pavithraravi29/Smart_tool_deployment.git
+    git clone https://github.com/your-username/Smart_tool_deployment.git
     cd Smart_tool_deployment
 fi
 
@@ -47,14 +48,22 @@ CMD [\"sh\", \"-c\", \"python init_db.py && uvicorn main:app --host 0.0.0.0 --po
 "
 
 create_file_if_not_exists "frontend/Dockerfile" "
-FROM node:14
+FROM node:14 as build
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . ./
+RUN npm run build
+
+FROM node:14-alpine
+RUN npm install -g serve
+WORKDIR /app
+COPY --from=build /app/build .
 EXPOSE 3000
-CMD [\"npm\", \"start\"]
+CMD ["serve", "-s", ".", "-l", "3000"]
 "
+
+
 
 create_file_if_not_exists "docker-compose.yml" "
 version: '3.8'
@@ -69,13 +78,9 @@ services:
       - POSTGRES_HOST=db
     depends_on:
       - db
-    ports:
-      - "8000:8000"
 
   frontend:
     build: ./frontend
-    ports:
-      - "3000:3000"
     depends_on:
       - backend
 
@@ -89,80 +94,28 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
 
+ 
+
 volumes:
   postgres_data:
 "
 
-# Ensure frontend directory exists and has necessary files
-mkdir -p frontend/src frontend/public
-touch frontend/src/index.js frontend/public/index.html
 
-# Create a minimal package.json if it doesn't exist
-if [ ! -f "frontend/package.json" ]; then
-    echo "Creating minimal package.json in frontend directory"
-    echo '{
-  "name": "my-react-app",
-  "version": "0.1.0",
-  "private": true,
-  "dependencies": {
-    "@fortawesome/free-solid-svg-icons": "^6.5.1",
-    "@fortawesome/react-fontawesome": "^0.2.0",
-    "@testing-library/jest-dom": "^5.17.0",
-    "@testing-library/react": "^13.4.0",
-    "@testing-library/user-event": "^13.5.0",
-    "apexcharts": "^3.45.1",
-    "autoprefixer": "^10.4.16",
-    "axios": "^1.6.3",
-    "buffer": "^6.0.3",
-    "canvasjs": "^1.8.3",
-    "canvasjs-react-charts": "^1.0.5",
-    "chart.js": "^4.4.1",
-    "chartjs-adapter-date-fns": "^3.0.0",
-    "chartjs-plugin-annotation": "^3.0.1",
-    "chartjs-plugin-datalabels": "^2.2.0",
-    "dygraphs": "^2.2.1",
-    "echarts": "^5.4.3",
-    "plotly.js": "^2.28.0",
-    "postcss": "^8.4.32",
-    "react": "^18.0.0",
-    "react-apexcharts": "^1.4.1",
-    "react-chartjs-2": "^5.2.0",
-    "react-dom": "^18.0.0",
-    "react-icons": "^4.12.0",
-    "react-plotly.js": "^2.6.0",
-    "react-router-dom": "^6.21.1",
-    "react-scripts": "5.0.1",
-    "recharts": "^2.10.3",
-    "socket.io-client": "^4.7.2",
-    "stream-browserify": "^3.0.0",
-    "tailwindcss": "^3.3.7",
-    "web-vitals": "^2.1.4"
-  },
-  "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
-  }
-}' > frontend/package.json
+"
+
+# Build and start the containers
+docker-compose up --build -d
+
+# Wait for services to be ready
+echo "Waiting for services to be ready..."
+sleep 10
+
+# Check if services are running
+if docker-compose ps | grep -q "Up"; then
+    echo "Installation complete! The application is now running."
+    echo "You can access it by opening a web browser and navigating to http://localhost"
+else
+    echo "Something went wrong. Please check the Docker logs for more information."
+    docker-compose logs
+    exit 1
 fi
-
-echo "Setup complete. You can now run 'docker-compose up' to start the application."
