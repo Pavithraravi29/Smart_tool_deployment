@@ -47,13 +47,29 @@ CMD [\"sh\", \"-c\", \"python init_db.py && uvicorn main:app --host 0.0.0.0 --po
 "
 
 create_file_if_not_exists "frontend/Dockerfile" "
-FROM node:14
+FROM node:14 as build
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . ./
-EXPOSE 3000
-CMD [\"npm\", \"start\"]
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/build /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD [\"nginx\", \"-g\", \"daemon off;\"]
+"
+
+create_file_if_not_exists "frontend/nginx.conf" "
+server {
+    listen 80;
+    location / {
+        root   /usr/share/nginx/html;
+        index  index.html index.htm;
+        try_files \$uri \$uri/ /index.html;
+    }
+}
 "
 
 create_file_if_not_exists "docker-compose.yml" "
@@ -67,6 +83,7 @@ services:
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=test_database
       - POSTGRES_HOST=db
+       
     depends_on:
       - db
     ports:
@@ -75,7 +92,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:3000"
+      - "3000:80"
     depends_on:
       - backend
 
@@ -89,8 +106,49 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
 
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+
 volumes:
   postgres_data:
+"
+
+create_file_if_not_exists "nginx.conf" "
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        listen 80;
+        
+        location / {
+            proxy_pass http://frontend:80;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+        
+        location /api/ {
+            proxy_pass http://backend:8000/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+        
+        location /ws {
+            proxy_pass http://backend:8000;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+}
 "
 
 # Ensure frontend directory exists and has necessary files
@@ -123,6 +181,7 @@ if [ ! -f "frontend/package.json" ]; then
     "dygraphs": "^2.2.1",
     "echarts": "^5.4.3",
     "plotly.js": "^2.28.0",
+    "http-server":"^14.1.1",
     "postcss": "^8.4.32",
     "react": "^18.0.0",
     "react-apexcharts": "^1.4.1",
@@ -143,6 +202,7 @@ if [ ! -f "frontend/package.json" ]; then
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
+   
   },
   "eslintConfig": {
     "extends": [
@@ -162,7 +222,23 @@ if [ ! -f "frontend/package.json" ]; then
       "last 1 safari version"
     ]
   }
-}' > frontend/package.json
+}
+' > frontend/package.json
 fi
 
-echo "Setup complete. You can now run 'docker-compose up' to start the application."
+# Build and start the containers
+docker-compose up --build -d
+
+# Wait for services to be ready
+echo "Waiting for services to be ready..."
+sleep 30
+
+# Check if services are running
+if docker-compose ps | grep -q "Up"; then
+    echo "Installation complete! The application is now running."
+    echo "You can access it by opening a web browser and navigating to http://localhost"
+else
+    echo "Something went wrong. Please check the Docker logs for more information."
+    docker-compose logs
+    exit 1
+fi

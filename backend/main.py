@@ -36,7 +36,8 @@ async def connect_to_postgres():
         "user": "postgres",
         "password": "password",
         "database": "test_database",
-        "host": "localhost",
+        "host": "db",
+         "port": 5432
     }
 
     pool = await asyncpg.create_pool(**postgres_config)
