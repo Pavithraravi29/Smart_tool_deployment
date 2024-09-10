@@ -22,7 +22,7 @@ if [ -d "Smart_tool_deployment" ]; then
     cd Smart_tool_deployment
     git pull
 else
-    git clone https://github.com/your-username/Smart_tool_deployment.git
+    git clone https://github.com/Pavithraravi29/Smart_tool_deployment.git
     cd Smart_tool_deployment
 fi
 
@@ -58,6 +58,7 @@ RUN npm run build
 FROM node:14-alpine
 RUN npm install -g serve
 WORKDIR /app
+RUN npm install -g serve
 COPY --from=build /app/build .
 EXPOSE 3000
 CMD ["serve", "-s", ".", "-l", "3000"]
